@@ -1,0 +1,1104 @@
+1. API KEY는 따로 .env 파일에 저장( 이렇게 저장하는 이유는 API키가 유출될 시 즉시 해킹되어 막대한 이용료가
+  청구될 수 있음, 환경변수파일로 만들어 저장한다면 안전하게 저장가능
+
+  이때 python-dotenv 사용 (설치는 pip install python-dotenv)
+  사용시
+  from dotenv import load_dotenv 
+  import os
+
+  load_dotenv()
+  strGPT_API_Key = os.getenv('OPEN_API_KEY')  ##여긴 .env 파일에 만들어둔 api키이
+2. response = client.chat.completions.create(
+  model = "gpt-4o" ## 모델 뭘 사용할지 gpt-5 등등 있
+  temperature=0.1 ## 0에서 1사이 0은 출력이 무작위성이 가장 낮은 답변, 1은 창의적인 답변
+  max_tokens = 150 ##토큰 사용량의 상한
+  message=[
+    ~~
+    ~~
+  
+] #system = GPT 역할, EX) You are a helpful assistant 
+  # user 사용자
+
+print(response.choices[0].message.content) # gpt 답변 출력
+
+3. OPENAI API 방식 3가지 (3주차 31p)
+  completions API(legacy), chat completions API(standard), Response API(recent)
+Completions = prompt 하나 gpt-3-5-turbo-instruct(채팅 모델을 넣으면 오류 발생) / Chat Completions = 역할이 있는 messages, gpt-3.5-turbo, gpt-4o
+/ Responses = input과 대화 상태 관리  
+
+  completions vs chat completions 
+  prompt:          message[]
+  response = completion = client.completions.create()
+  response = client.chat.completions.create()
+역할지정 : completions : 별도지정없
+          chat : role로 지정
+
+
+4. 이미지 입력, 스트리밍, 함수 호출, 토큰 확률 확인
+  default =
+    {"role": "user", "content": "안녕하세요"}
+
+  input image = {
+    "role": "user",
+    "content": [
+        {
+            "type": "text",
+            "text": "이 이미지에 무엇이 있는지 설명해줘."
+        },
+        {
+            "type": "image_url",
+            "image_url": {"url": image_url}
+        }
+    ]
+}
+
+  stream = 답변을 생성되는 대로 받는 방식
+    stream = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[
+        {"role": "user", "content": "인공지능을 설명해줘."}
+    ],
+    stream=True        ##스트림으로 응답을 받겠다는 설정(false는 응답이 완성된 뒤 결과를 받음)
+)
+
+for chunk in stream:                ##도착하는 조각들을 차례대로 읽음
+    text = chunk.choices[0].delta.content
+    if text is not None:                ##여긴 필수는아님
+        print(text, end="", flush=True)
+
+    function : 예를 들어 “서울의 현재 날씨를 알려줘”라는 질문에 답하려면 실제 날씨 데이터를 조회해야 합니다. 이때 모델에 사용 가능한 함수의 이름, 설명, 인자 형식을 알려줄 수 있어요.
+
+    response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=messages,
+    tools=tools,        ##함수 설명을 담은 목록
+    tool_choice="auto"  ##모델이 함수 호출이 필요한지 판단하도록 합니다.
+)
+
+tool_calls = response.choices[0].message.tool_calls ##모델이 요청한 함수 호출 정보를 확인합니다.
+
+여기서 가장 중요한 것은 모델이 함수 이름과 인자를 제안하고, 실제 실행은 개발자 코드가 한다는 점입니다.
+
+  Logprobs : 모델은 답변을 만들며 다음에 올 토큰을 선택함(여기서 토큰은 단어전체 일수도, 단어의 일부 일수도, 문장부호일수도 있음)
+      Logprobs는 이렇게 출력된 토큰의 로그 확률 정보를 받는 기능.
+      response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[
+        {"role": "user", "content": "Hello!"}
+    ],
+    logprobs=True,    #출력 토큰의 로그 확률을 반환하도록 합니다.
+    top_logprobs=2    #각 토큰 위치에서 확률이 높은 후보를 최대 두 개(써진 숫자 ex)2 )까지 확인합니다.
+)
+
+print(response.choices[0].logprobs)
+  확률에 자연로그를 취하기 때문에 값은 보통 음수로 나옵니다. 0에 가까울 수록 확률이 높음 -0.1 > -0.3
+  토큰의 확률이 높다고 답변 내용이 사실이라는 것은 아님. 문맥에서 그 토큰이 선택될 확률이며 사실 여부의 확률은 아님
+
+5. System prompt로 모델의 역할 설정
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "2022년 월드컵 우승팀은 어디야?"}
+]
+역할에 따라 같은 질문도 다른 답변이 나올 수 있음
+
+6. zero-shot, one-shot, few-shot 비교
+| 방법 | 제공하는 예시 |
+|---  |---|
+| Zero-shot | 없음 |   오리는?
+| One-shot | 하나 | ex) 참새는 짹쨱(one-shot에 해당하는 예시 하나) 오리는?
+| Few-shot | 여러 개 | 참새는 짹짹, 말은 히이잉, 개구리는 개굴개굴(이처럼 예시를 여러개) 뱀은?
+
+7. single-turn , multi-turn
+  single-turn : 대화내용을 기억못함( 내 이름은 박계윤 -> 내가 누구였지? -> 모르겠습니다.)
+  multi-turn : 대화내용을 기억함 ( 내 이름은 박계윤 -> 내가 누구지? -> 박계윤입니다)
+    def get_GPT_response(strMessages) 를 사용
+    핵심 코드 : 
+strMessages.append({"role": "user", "content": User_input}) ##사용자 질문 저장
+GPT_response = get_GPT_response(strMessages) ##전체기록으로 api호출
+strMessages.append({"role": "assistant", "content": GPT_response}) 모델 답변 저장
+
+8. streamlit : python으로 앱 애플리케이션 화면을 만드는 프레임워크 (w4 p23 ~)
+  특징 : 손쉬운 구현, 백엔드 개발 불필요, 자동 렌더링(UI요소가 바뀌면 자동으로 업데이트), 배포 지원
+          대화형 UI, 다양한 사트 및 지도 지원, 커뮤니티 및 확장 기능 지원
+
+  설치 : pip install streamlit
+  사용 : 상단에 import streamlit as st(편의상 이름) 으로 호출
+        st.title("Chatbot")
+        st.caption("")
+        if "messages" not in st.session_state:
+        st.session_state["messages"] = [
+        {"role": "assistant", "content": "How can I help you?"}
+    ]
+    st.session_state는 같은 사용자 세션에서 프로그램이 다시 실행되어도 유지할 값을 저장합니다. "messages"가 없을 때만 초기화하므로, 입력할 때마다 대화 기록이 처음 상태로 덮어써지는 것을 막습니다.
+
+  | 코드 | 역할 |
+|---|---|
+| `st.chat_input()` | 질문 입력받기 |
+| `st.chat_message(...).write(...)` | 채팅 메시지 표시하기 |
+| `st.session_state.messages.append(...)` | 대화 기록 저장하기 |
+| `client.chat.completions.create(...)` | 모델에 답변 요청하기 |
+      if prompt := st.chat_input():의 :=는 입력값을 prompt에 저장하면서 조건도 검사하는 문법입니다. 사용자 질문과 모델 답변을 모두 기록에 추가합니다.
+
+9. PDF추출도구(PyMuPDF)
+  설치 : pip install PyMuPDF
+  사용 : import pymupdf
+  사용 : 
+    objDoc = pymupdf.open(pdf_file_path)  #PDF를 열고
+full_text = ""
+
+for page in objDoc:
+    strText = page.get_text()   #한 페이지의 텍스트를 추출합니다
+    full_text += strText #각 페이지의 텍스트를 누적
+
+txtFile_Name = f"./data/{pdf_file_name}.txt"로 txt파일에 저장
+
+10. 좌표로 본문 영역만 추출
+  header_height = 120 #상단, 위쪽 제외 높이
+  footer_height = 150 #하단, 아래쪽 제외 높이
+  문서에 맞게 조정
+  clip은 텍스트를 가져올 사각형 영역, 순서는 왼쪽x좌표, 위쪽 y좌표, 오른쪽 x좌표, 아래쪽 y좌표
+
+11. 파일을 읽고 요약 프롬프트 제작
+   def fSummarize_txt(file_path: str) 로 읽음
+    system_prompt로 내용 요약 (너는 교수고 대충 이내용을 타이틀, 메인 내용 으로 잘정리해봐 같이)
+    f.write = 파일 작성(저장)
+
+12. 프로그램을 세 함수로 나누기 (w4 p42~44)
+    | 함수 | 담당하는 일 |
+|---|---|
+| `pdf_to_text()` | PDF에서 본문을 추출해 텍스트 파일로 저장 |
+| `fSummarize_txt()` | 텍스트 파일을 읽고 GPT로 요약 |
+| `fSummarize_pdf()` | 위 두 함수를 호출하고 최종 요약 저장 |
+
+13. stt(speech-to-text), ASR(automatic-speech-Recognition)
+  stt : 사람의 음성을 입력받아 텍스트로 변환
+    PCM 데이터: 음성 신호 데이터
+    JSON 데이터: 인식 작업에 필요한 설정 정보
+    출력: 인식된 텍스트
+  asr : 자동 음성 인식, 녹음 내용을 받아씀
+
+14. Whisper 
+    OpenAI의 자동 음성 인식 시스템, 68만 시간의 다국어, 다중 작업 지도학습 데이터로 학습한 시스템으로 음성 인식과 음성 번역에 사용
+    모델 구조 : Encoder–Decoder Transformer 구조를 사용, encoder : 입력 음성의 특징을 처리 decoder : 처리된 정보를 바탕으로 텍스트 토큰 생성
+
+15. MP3 핵심 코드
+  audio_file_path = '~~' #mp3 파일 경로
+
+  with open(audio_file_path, "rb") as audio_file: #바이너리 읽기 모드로 염
+    transcription = client.audio.transcriptions.create(    #음성을 텍스트로 전사
+        model="whisper-1",    #사용할 음성 인식 모델 지정
+        file=audio_file      #경로 문자열 대신 열어둔 파일 객체를 전달 
+    )
+    transcription : 결과 객체 표시, 인식된 글자만 가져올땐 transcription.text
+
+16. 음성 영어로 번역
+  audio.translations.create()	음성을 영어 텍스트로 번역
+
+17. FFMPEG : FFmpeg는 오디오·비디오 파일을 처리하고 변환하는 도구입니다.
+  설치 : %pip install --upgrade pip
+        %pip install --upgrade transformers datasets[audio] accelerate / %pip는 노트북에서 패키지를 설치하는 명령입니다.
+
+  사용 : os.environ["PATH"] += os.pathsep + r"C:\LLM_Project\ffmpeg\bin" #Python 프로그램이 ffmpeg 실행 파일을 찾을 수 있도록 경로를 추가
+    PATH: 실행 파일을 찾을 때 확인하는 경로 목록
+    os.pathsep: 경로 사이를 구분하는 문자
+    r"...": 역슬래시를 포함한 경로를 표현하는 raw 문자열
+
+18. 모델과 실행장치 준비 (w5 p36)
+    device : cuda를 사용할 수 있다면 GPU, 아니면 CPU
+    torch_dtype : GPU라면 float16 아니면 float32로 진행
+    from_pretrained()로 학습된 모델과 processor를 불러오고, 
+    model.to(device)로 모델을 선택한 장치에 배치합니다.
+
+    AutoProcessor는 모델 입력에 필요한 음성 특징 처리와 텍스트 토큰 처리에 관련된 구성 요소를 제공
+    | 설정 | 의미 |
+    |---|---|
+    | `return_timestamps=True` | 인식 결과에 시간 정보 포함 |
+    | `chunk_length_s=10` | 음성을 나누어 처리할 구간 길이 설정 |
+    | `stride_length_s=2` | 경계에서 내용이 누락되지 않도록 겹치는 구간 설정 |
+
+19. 시간별 인식 결과 저장
+
+    for chunk in result["chunks"]:
+      start = chunk["timestamp"][0]
+      end = chunk["timestamp"][1]
+      text = chunk["text"]
+      start_end_text.append([start, end, text])
+timestamp의 첫 번째 값은 시작 시간, 두 번째 값은 종료 시간입니다. 각 구간을 [start, end, text] 형태로 모은 다음 DataFrame을 만듭니다.
+
+df = pd.DataFrame(
+    start_end_text,
+    columns=["start", "end", "text"]
+)
+
+df.to_csv("STT_Audio_Chunks.csv", index=False, sep="|")
+index=False: 행 번호를 파일에 저장하지 않습니다.
+sep="|": 열 사이의 구분자로 |를 사용합니다.
+display(df): 노트북 화면에 표를 표시합니다.
+파일 확장자는 .csv지만, 이 예제의 실제 구분자는 쉼표가 아니라 **|**입니다.
+
+
+20. STT, TTS
+  STT : 입력이 음성, 출력이 텍스트
+  TTS : 입력이 텍스트, 출력이 음성
+    response = client.audio.speech.create(
+    model="tts-1-hd",
+    voice="alloy",
+    input="Hello! This is a TTS API test."
+)
+
+model: 사용할 음성 생성 모델
+voice: 사용할 목소리
+input: 읽어 줄 텍스트
+
+21. 빈칸 문제
+with open(Source_txtFile, "r", encoding="utf-8") as f:
+    (빈칸1)(text = f.read())
+
+response = client.audio.speech.create(
+    model="tts-1-hd",
+    voice=voice,
+    input=(빈칸2)(text)
+)
+
+*22. 이미지 URL로 이미지 분석하기 — Week 6, p5~6**
+
+이미지 주소와 질문을 함께 전달하면 모델이 이미지를 보고 설명함.
+
+```python
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "이 이미지에 대해 설명해주세요."},
+            {
+                "type": "image_url",
+                "image_url": {"url": image_url}
+            }
+        ]
+    }
+]
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=messages
+)
+
+print(response.choices[0].message.content)
+```
+
+`image_url` 변수에는 실제 이미지 주소가 들어 있다고 가정함.
+
+- `messages`는 대화 메시지 목록.
+- 이미지와 질문을 함께 보낼 때 `content`를 리스트로 구성.
+- `type="text"`는 질문, `type="image_url"`은 이미지.
+- 결과는 이미지 파일이 아니라 **이미지를 설명하는 텍스트**.
+
+---
+
+**23. Base64 인코딩 — Week 6, p7**
+
+이미지 같은 **바이너리 데이터를 텍스트 형태로 표현**하는 인코딩 방식.
+
+사용 이유: 이미지 데이터를 JSON 같은 텍스트 기반 형식에 넣어 전달하기 위해서.
+
+- 암호화가 아니므로 내용을 숨겨 주는 보안 기능은 아님.
+- 파일 크기를 줄이는 압축 방식도 아님.
+- Base64로 바꾼 문자열을 API의 이미지 입력에 활용할 수 있음.
+
+---
+
+**24. 이미지 파일을 Base64 문자열로 바꾸기 — Week 6, p9·14**
+
+```python
+import base64
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(
+            image_file.read()
+        ).decode("utf-8")
+
+base64_image = encode_image("./Data/Image_Sample.jpg")
+```
+
+처리 순서:
+
+```text
+이미지 파일 열기 → 파일의 바이트 읽기 → Base64로 인코딩 → 문자열로 변환
+```
+
+- `"rb"`: 바이너리 읽기 모드.
+- `image_file.read()`: 파일 내용 읽기.
+- `base64.b64encode()`: 읽은 바이트를 Base64 바이트로 변환.
+- `.decode("utf-8")`: Base64 바이트를 Python 문자열로 변환.
+
+여기서 `.decode()`는 **Base64 결과를 문자열로 바꾸는 것**이며, 원본 이미지로 되돌리는 작업이 아님.
+
+---
+
+**25. Base64 이미지를 API에 전달하기 — Week 6, p10**
+
+```python
+{
+    "type": "image_url",
+    "image_url": {
+        "url": f"data:image/jpeg;base64,{base64_image}"
+    }
+}
+```
+
+`data:image/jpeg;base64,`는 뒤에 오는 데이터가 Base64로 표현된 JPEG 이미지라는 뜻.
+
+- `image/jpeg`: 이미지 형식.
+- `base64`: 인코딩 방식.
+- `{base64_image}`: 실제 이미지 데이터.
+
+인터넷 이미지 주소를 넣는 방식과 Base64 데이터를 넣는 방식 모두 `image_url` 항목을 사용함.
+
+---
+
+**26. 여러 이미지 비교하기 — Week 6, p11~12**
+
+이미지를 각각 인코딩하고, 하나의 `content` 리스트에 이미지 항목을 여러 개 넣음.
+
+```python
+content = [
+    {"type": "text", "text": "두 이미지의 차이점을 설명해주세요."},
+    {
+        "type": "image_url",
+        "image_url": {
+            "url": f"data:image/jpeg;base64,{base64_image}"
+        }
+    },
+    {
+        "type": "image_url",
+        "image_url": {
+            "url": f"data:image/jpeg;base64,{base64_image_01}"
+        }
+    }
+]
+```
+
+여러 이미지를 비교하려면 **각 이미지 항목을 같은 요청에 포함**하면 됨.
+
+---
+
+**27. 이미지로 퀴즈 만들기 — Week 6, p13~17**
+
+`image_quiz(image_path, ...)` 함수에서 이미지를 인코딩하고, 퀴즈 생성 지시문과 함께 API에 전달함.
+
+프롬프트에 지정하는 내용:
+
+- 이미지에 대한 문제를 만들 것.
+- 보기와 정답의 형식을 맞출 것.
+- 교재 예제에서는 1~4번 중 정답을 하나만 만들 것.
+- 원하는 문제·정답의 예시를 제공할 것.
+
+```python
+quiz_prompt = """
+이미지를 바탕으로 퀴즈를 만들어주세요.
+[Quiz]와 [Answer] 형식으로 작성해주세요.
+"""
+```
+
+이 지시문을 메시지의 텍스트 항목에 넣음.
+
+```python
+{"type": "text", "text": quiz_prompt}
+```
+
+퀴즈 생성 결과도 다음 위치에서 가져옴.
+
+```python
+response.choices[0].message.content
+```
+
+프롬프트에 넣은 **완성된 문제와 정답의 예시**는 One-shot/Few-shot과 연결해서 이해하면 됨.
+
+---
+
+**28. 여러 이미지에서 퀴즈 생성·Markdown 저장 — Week 6, p19~24**
+
+```python
+from glob import glob
+import os
+
+for g in glob("./Data/Images/*.jpg"):
+    Quiz = image_quiz(g)
+    filename = os.path.basename(g)
+```
+
+- `glob("./Data/Images/*.jpg")`: 해당 폴더의 JPG 파일 경로들을 가져옴.
+- `*`: 여러 파일명과 일치시키는 와일드카드.
+- `os.path.basename(g)`: 전체 경로에서 파일명만 가져옴.
+
+문제 번호, 이미지 링크, 문제 내용을 문자열에 누적함.
+
+```python
+MD_Text += f"\n## Quiz-{P_No}\n"
+MD_Text += f"![image]({filename})\n\n"
+MD_Text += Quiz
+```
+
+Markdown에서 `![image](파일명)`은 이미지를 표시하는 문법.
+
+```python
+with open("Image_Quiz.md", "w", encoding="utf-8") as f:
+    f.write(MD_Text)
+```
+
+`f.write()`로 작성한 Markdown 문자열을 파일에 저장함.
+
+---
+
+**29. 퀴즈 생성 실패 시 재시도 — Week 6, p27~29**
+
+영어 듣기 문제 생성에서는 결과에 `"Listening:"`이 포함되었는지 확인함.
+
+```python
+if n_trial >= max_trial:
+    return None, False
+
+# 이미지 인코딩과 API 호출 부분 생략
+
+content = response.choices[0].message.content
+
+if "Listening:" in content:
+    return content, True
+else:
+    return image_quiz(image_path, n_trial + 1, max_trial)
+```
+
+- `n_trial`: 현재 시도 횟수.
+- `max_trial`: 최대 시도 횟수.
+- `n_trial + 1`: 횟수를 증가시켜 다시 호출.
+- `return content, True`: 결과와 성공 여부를 함께 반환.
+- `return None, False`: 결과 생성 실패.
+
+호출하는 쪽에서는 두 값을 나누어 받음.
+
+```python
+Quiz, is_suceed = image_quiz(g)
+
+if not is_suceed:
+    continue
+```
+
+`continue`는 현재 이미지의 나머지 처리를 건너뛰고 다음 이미지로 넘어감.
+
+`try / except`는 오류가 났을 때 프로그램 전체를 중단하는 대신 재시도하거나 다음 항목으로 넘어가도록 하는 데 사용함.
+
+---
+
+**30. 퀴즈에서 영어 듣기 부분만 추출 — Week 6, p35~36**
+
+```python
+strEng = Quiz.split("Listening: ")[1].split("[Answer]:")[0].strip()
+```
+
+순서대로 해석:
+
+1. `"Listening: "`을 기준으로 나눔.
+2. `[1]`로 그 뒤의 부분을 가져옴.
+3. 다시 `"[Answer]:"`를 기준으로 나눔.
+4. `[0]`으로 정답 설명 이전 부분을 가져옴.
+5. `.strip()`으로 앞뒤 공백·줄바꿈 제거.
+
+즉, **Listening 뒤부터 Answer 앞까지** 추출하는 코드.
+
+구분 문구가 없거나 형식이 달라지면 원하는 추출이 되지 않으므로, 앞에서 생성 형식을 확인하는 과정이 필요함.
+
+---
+
+**31. 퀴즈를 JSON 파일로 저장하고 읽기 — Week 6, p36~40**
+
+문제 번호, 영어 문제, 이미지 파일명을 묶어 저장함.
+
+```python
+Eng_Diction = []
+
+Eng_Diction.append({
+    "No": P_No,
+    "Quiz": strEng,
+    "imgFile": filename
+})
+```
+
+`Eng_Diction`은 이름에 Diction이 있지만, `[]`로 만들었으므로 **리스트**임. 각 원소가 딕셔너리인 구조.
+
+```python
+with open("Image_Quiz_Eng.json", "w", encoding="utf-8") as f:
+    json.dump(Eng_Diction, f, ensure_ascii=False, indent=4)
+```
+
+- `ensure_ascii=False`: 한글 등을 읽을 수 있는 문자 형태로 저장.
+- `indent=4`: 들여쓰기를 넣어 보기 좋게 저장.
+
+다시 읽을 때:
+
+```python
+with open("Image_Quiz_Eng.json", "r", encoding="utf-8") as f:
+    Eng_Diction = json.load(f)
+```
+
+| 함수 | 역할 |
+|---|---|
+| `json.dump(데이터, 파일)` | Python 데이터를 JSON 파일에 저장 |
+| `json.load(파일)` | JSON 파일을 읽어 Python 데이터로 변환 |
+| `json.dumps(데이터)` | Python 데이터를 JSON 문자열로 변환 |
+| `json.loads(문자열)` | JSON 문자열을 Python 데이터로 변환 |
+
+---
+
+**32. JSON의 영어 문제를 음성으로 만들기 — Week 6, p41~43**
+
+```python
+for q in Eng_Diction:
+    P_No = q["No"]
+    Quiz = q["Quiz"]
+
+    Quiz = Quiz.replace("- (1)", "- One.\t")
+    Quiz = Quiz.replace("- (2)", "- Two.\t")
+```
+
+`replace()`는 보기 번호가 음성으로 자연스럽게 읽히도록 문자열을 바꾸는 데 사용함.
+
+```python
+voice = voices[P_No % len(voices)]
+```
+
+문제 번호를 목소리 목록 길이로 나눈 나머지를 사용해 목소리를 순환 선택함.
+
+리스트 인덱스는 0부터 시작하므로, 교재처럼 `P_No=1`이면 두 번째 목소리가 선택됨.
+
+```python
+response = client.audio.speech.create(
+    model="tts-1-hd",
+    voice=voice,
+    input=f"{P_No}. {Quiz}"
+)
+
+mp3_file = f"./Data/Audio/Eng_Listening_{P_No}.mp3"
+response.write_to_file(mp3_file)
+```
+
+문제마다 다른 파일명으로 저장함.
+
+생성한 파일들을 노트북에서 재생하는 코드:
+
+```python
+for file in sorted(glob("./Data/Audio/Eng_Listening_*.mp3")):
+    display(ipd.Audio(file))
+```
+
+`sorted()`는 파일 경로들을 정렬하고, `display(ipd.Audio(file))`는 각 오디오 재생기를 표시함.
+
+---
+
+**33. Function Calling의 목적과 실행 흐름 — Week 7, p6~11**
+
+모델이 외부 데이터나 기능을 사용해야 할 때 **호출할 함수 이름과 인자**를 구조화된 형태로 제안하는 기능.
+
+실제 함수 실행은 개발자가 작성한 프로그램이 담당함.
+
+```text
+사용자 질문
+→ 모델이 함수와 인자 선택
+→ 프로그램이 함수 실행
+→ 실행 결과를 모델에 전달
+→ 모델이 최종 답변 작성
+```
+
+활용 예:
+
+- 쇼핑: 재고 조회, 상품 정보 조회.
+- 업무 자동화: 기사 요약, 게시판 업로드.
+- 정보 추출: 정해진 항목을 JSON 형식으로 추출.
+
+모델이 미리 학습한 지식만으로 알기 어려운 현재 시간·주가·재고 등을 외부 함수로 확인할 수 있음.
+
+---
+
+**34. 현재 시간과 시간대 처리 — Week 7, p13·19**
+
+```python
+from datetime import datetime
+
+now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+```
+
+`datetime.now()`로 현재 시간을 가져오고, `strftime()`으로 문자열 형식을 지정함.
+
+| 기호 | 의미 |
+|---|---|
+| `%Y` | 연도 |
+| `%m` | 월 |
+| `%d` | 일 |
+| `%H` | 시 |
+| `%M` | 분 |
+| `%S` | 초 |
+
+월 `%m`과 분 `%M`을 구분.
+
+시간대를 지정하는 함수:
+
+```python
+import pytz
+
+def get_current_time(timezone: str = "Asia/Seoul"):
+    tz = pytz.timezone(timezone)
+    now = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+    return f"{now} {timezone}"
+```
+
+- `pytz.timezone(timezone)`: 해당 시간대 객체 생성.
+- `datetime.now(tz)`: 해당 시간대의 현재 시간.
+- `"Asia/Seoul"`: 인자를 생략했을 때 사용하는 기본값.
+
+`print()`는 화면 출력이고, `return`은 호출한 코드로 결과를 돌려주는 것.
+
+---
+
+**35. tools로 함수 설명하기 — Week 7, p14·20**
+
+모델에 함수 이름·설명·인자 구조를 전달하는 목록.
+
+```python
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_time",
+            "description": "해당 시간대의 현재 시간을 반환합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "timezone": {
+                        "type": "string",
+                        "description": "예: Asia/Seoul"
+                    }
+                },
+                "required": ["timezone"]
+            }
+        }
+    }
+]
+```
+
+| 항목 | 의미 |
+|---|---|
+| 바깥의 `"type": "function"` | 함수 도구라는 뜻 |
+| `name` | 호출할 함수 이름 |
+| `description` | 함수가 하는 일 |
+| `parameters` | 인자들의 구조 |
+| `"type": "object"` | 인자들이 키·값 구조라는 뜻 |
+| `properties` | 각 인자 이름과 자료형 설명 |
+| `required` | 반드시 필요한 인자 목록 |
+
+Python 함수에 기본값이 있어도, 위 설명의 `required`는 모델에 해당 인자를 요구하도록 지정하는 항목임.
+
+`tools`에 함수 설명을 적었다고 실제 함수가 자동으로 만들어지는 것은 아님.
+
+---
+
+**36. 함수 호출 요청이 포함된 응답 받기 — Week 7, p15~16**
+
+```python
+AI_response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=messages,
+    tools=tools
+)
+
+AI_message = AI_response.choices[0].message
+tool_calls = AI_message.tool_calls
+```
+
+- `AI_response`: 전체 응답 객체.
+- `AI_message`: 첫 번째 응답 메시지.
+- `AI_message.content`: 답변 텍스트.
+- `AI_message.tool_calls`: 함수 호출 요청 목록.
+
+함수 호출 요청이 들어 있는지 검사:
+
+```python
+if tool_calls:
+    tool_name = tool_calls[0].function.name
+    tool_call_id = tool_calls[0].id
+```
+
+`[0]`은 여러 호출 중 첫 번째 호출만 가져오는 것.
+
+함수 호출 응답에서는 일반 답변 텍스트가 없을 수 있으므로 `content`만 확인하면 함수 요청을 놓칠 수 있음.
+
+---
+
+**37. 함수 인자를 JSON 문자열에서 딕셔너리로 변환 — Week 7, p21~22**
+
+```python
+import json
+
+arguments = json.loads(tool_call.function.arguments)
+```
+
+모델이 반환하는 인자 예:
+
+```python
+'{"timezone": "Asia/Seoul"}'  # 문자열
+```
+
+`json.loads()` 처리 후:
+
+```python
+{"timezone": "Asia/Seoul"}    # 딕셔너리
+```
+
+이제 키로 인자에 접근할 수 있음.
+
+```python
+result = get_current_time(
+    timezone=arguments["timezone"]
+)
+```
+
+`loads()`는 **JSON 문자열 → Python 데이터**이며, 여기서는 딕셔너리를 얻는 데 사용함.
+
+---
+
+**38. 여러 도시의 시간을 한 번에 처리 — Week 7, p24~27**
+
+여러 함수 호출 요청이 있으면 첫 번째 것만 처리하지 않고 반복문을 사용함.
+
+```python
+for tool_call in tool_calls:
+    tool_name = tool_call.function.name
+    tool_call_id = tool_call.id
+    arguments = json.loads(tool_call.function.arguments)
+
+    if tool_name == "get_current_time":
+        result = get_current_time(
+            timezone=arguments["timezone"]
+        )
+```
+
+함수 이름이 같더라도 시간대가 다르면 여러 번 호출할 수 있음.
+
+예: 서울·런던·뉴욕의 시간 요청 → 같은 함수를 서로 다른 인자로 호출.
+
+함수 실행 결과를 대화 기록에 추가한 뒤 모델을 다시 호출해 최종 답변을 받음.
+
+`tool_call_id`는 **어느 함수 호출 요청에 대한 결과인지 연결하는 식별자**.
+
+---
+
+**39. Function Calling을 Streamlit에 연결 — Week 7, p29~34**
+
+기존 `messages` 대신 `st.session_state.messages`를 사용해 대화 기록을 유지함.
+
+```python
+st.session_state.messages.append({
+    "role": "user",
+    "content": user_input
+})
+```
+
+처리 흐름:
+
+```text
+입력창에서 질문 받기
+→ 사용자 메시지 저장
+→ API 호출
+→ tool_calls 확인
+→ 필요한 함수 실행
+→ 함수 결과 저장
+→ API 재호출
+→ 최종 답변 저장·화면 출력
+```
+
+```python
+with st.spinner("AI is thinking..."):
+    # API 호출 또는 함수 실행
+    ...
+```
+
+`st.spinner()`는 작업 중임을 화면에 표시함. 그 자체가 모델을 호출하거나 함수를 실행하는 것은 아님.
+
+이전 대화를 화면에 표시할 때는 `user`, `assistant` 메시지만 골라 표시하고, 내부 처리용 메시지는 대화 기록에 보관할 수 있음.
+
+---
+
+**40. Yahoo Finance와 yfinance — Week 8, p3~9**
+
+`yfinance`는 Yahoo Finance의 금융 데이터를 조회하는 라이브러리.
+
+설치:
+
+```text
+pip install yfinance
+```
+
+사용:
+
+```python
+import yfinance as yf
+
+stock = yf.Ticker("MSFT")
+```
+
+`Ticker()`에 조회할 종목의 티커를 전달해 객체를 만듦.
+
+| 회사 | 교재의 티커 |
+|---|---|
+| Microsoft | `MSFT` |
+| Amazon | `AMZN` |
+| Meta | `META` |
+| Google | `GOOGL` |
+| Coca-Cola | `KO` |
+| 삼성전자 | `005930.KS` |
+| Apple | `AAPL` |
+
+삼성전자 티커는 앞의 0과 `.KS`까지 포함한 문자열로 사용함.
+
+---
+
+**41. 회사 정보·주가 기록·추천 정보 조회 — Week 8, p5~9**
+
+```python
+stock.info                     # 회사 기본 정보
+stock.history(period="5d")     # 최근 5일 기간의 주가 기록
+stock.recommendations         # 애널리스트 추천 정보
+```
+
+`.info`와 `.recommendations`에는 괄호가 없고, `.history()`는 인자를 받는 메서드 호출이므로 괄호가 있음.
+
+주가 기록의 주요 열:
+
+| 열 | 의미 |
+|---|---|
+| `Open` | 시가 |
+| `High` | 고가 |
+| `Low` | 저가 |
+| `Close` | 종가 |
+| `Volume` | 거래량 |
+| `Dividends` | 배당 |
+| `Stock Splits` | 주식 분할 |
+
+교재 빈칸 예:
+
+```python
+Google = yf.Ticker("GOOGL")
+
+Google_Hist = Google.history(period="5d")  # 빈칸 1
+Google.recommendations                   # 빈칸 2
+```
+
+---
+
+**42. 주식 조회 기능을 함수로 만들기 — Week 8, p11~12·16**
+
+교재의 함수:
+
+| 함수 | 역할 |
+|---|---|
+| `get_current_time(timezone)` | 현재 시간 조회 |
+| `get_yf_stock_info(ticker)` | 회사 기본 정보 조회 |
+| `get_yf_stock_history(ticker, period)` | 주가 기록 조회 |
+| `get_yf_stock_recommendations(ticker)` | 추천 정보 조회 |
+
+주가 기록 함수 예:
+
+```python
+def get_yf_stock_history(ticker: str, period: str):
+    stock = yf.Ticker(ticker)
+    history = stock.history(period=period)
+    history_md = history.to_markdown()
+    return history_md
+```
+
+`to_markdown()`은 DataFrame을 Markdown 표 형태의 **문자열**로 변환함. 모델에 표 내용을 전달하고 읽기 좋게 표시하는 데 사용함.
+
+교재에서는 이 변환에 필요한 `tabulate`도 설치함.
+
+```text
+pip install tabulate
+```
+
+회사 기본 정보는 `str(info)`, 표 데이터는 `to_markdown()`으로 문자열화하는 흐름.
+
+---
+
+**43. 주식 조회 함수도 tools에 등록 — Week 8, p13~15**
+
+Python 함수만 만들지 말고, 모델에 어떤 함수가 있고 어떤 인자가 필요한지도 알려줘야 함.
+
+| 함수 | 주요 인자 | 교재의 필수 인자 |
+|---|---|---|
+| `get_yf_stock_info` | `ticker` | `ticker` |
+| `get_yf_stock_history` | `ticker`, `period` | 둘 다 |
+| `get_yf_stock_recommendations` | `ticker` | `ticker` |
+
+주가 기록 조회의 필수 인자 설정:
+
+```python
+"required": ["ticker", "period"]
+```
+
+예를 들어 “구글 최근 5일 주가”를 요청하면 모델이 함수 호출 인자로 `ticker="GOOGL"`, `period="5d"`를 제안할 수 있음.
+
+실제 주가 조회는 모델이 아니라 **yfinance를 실행하는 프로그램**이 담당함.
+
+---
+
+**44. 함수 실행 결과를 공통 변수로 모으기 — Week 8, p20~22**
+
+함수마다 결과 메시지를 따로 작성하지 않고, 먼저 `Getfunction_result`에 실행 결과를 저장함.
+
+```python
+if tool_name == "get_current_time":
+    Getfunction_result = get_current_time(
+        timezone=arguments["timezone"]
+    )
+
+elif tool_name == "get_yf_stock_info":
+    Getfunction_result = get_yf_stock_info(
+        ticker=arguments["ticker"]
+    )
+
+elif tool_name == "get_yf_stock_history":
+    Getfunction_result = get_yf_stock_history(
+        ticker=arguments["ticker"],
+        period=arguments["period"]
+    )
+
+elif tool_name == "get_yf_stock_recommendations":
+    Getfunction_result = get_yf_stock_recommendations(
+        ticker=arguments["ticker"]
+    )
+```
+
+22쪽 빈칸은 다음 연결을 보면 됨.
+
+1. 주가 기록 함수 호출 → `ticker`, `period` 전달.
+2. 추천 정보 함수 호출 → `ticker` 전달.
+3. 결과 메시지의 `content` → `Getfunction_result` 사용.
+
+`Getfunction_result`는 **함수 이름이 아니라 실행 결과를 담는 변수**.
+
+---
+
+**45. 스트리밍과 yield — Week 8, p25~27**
+
+```python
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=messages,
+    tools=tools,
+    stream=True
+)
+```
+
+- `stream=False`: 완성된 응답을 받아 처리.
+- `stream=True`: 생성되는 응답 조각들을 받아 처리.
+
+일반 응답과 스트리밍 응답의 텍스트 위치를 구분:
+
+```python
+response.choices[0].message.content    # 일반 응답
+chunk.choices[0].delta.content        # 스트리밍 조각
+```
+
+교재에서는 `yield`로 조각을 전달함.
+
+```python
+for chunk in response:
+    yield chunk
+```
+
+`yield`는 값을 하나 전달하고 실행을 잠시 멈춘 뒤, 다음 값을 요청받으면 이어서 실행함. 이런 함수는 generator 함수가 됨.
+
+`return`은 해당 함수 실행을 끝내고 값을 돌려주는 것.
+
+주의: 함수 안에 `yield`가 있으면 generator 함수이므로, 같은 함수의 다른 분기에 `return response`를 적었다고 일반 응답 객체를 바로 반환하는 함수가 되는 것은 아님.
+
+---
+
+**46. Streamlit에 답변을 조금씩 표시 — Week 8, p28·33~34**
+
+```python
+content = ""
+
+for chunk in AI_response:
+    content_chunk = chunk.choices[0].delta.content
+
+    if content_chunk:
+        content += content_chunk
+        st.markdown(content)
+```
+
+- `content_chunk`: 이번에 새로 받은 텍스트 조각.
+- `content += content_chunk`: 지금까지 받은 답변을 누적.
+- `st.markdown(content)`: Markdown 형식으로 화면에 표시.
+
+교재에서는 비어 있는 표시 영역을 이용해 누적된 답변을 갱신하는 흐름을 사용함.
+
+스트리밍이 끝난 뒤 전체 답변을 저장:
+
+```python
+st.session_state.messages.append({
+    "role": "assistant",
+    "content": content
+})
+```
+
+**화면에 답변을 표시하는 것과 대화 기록에 저장하는 것은 별도 작업**.
+
+---
+
+**47. 스트리밍 중 Function Calling 처리 — Week 8, p30~36**
+
+텍스트 조각인 `delta.content`만 읽으면 함수 호출 요청을 처리하지 못할 수 있음.
+
+```python
+delta = chunk.choices[0].delta
+
+if delta.content:
+    content += delta.content
+
+if delta.tool_calls:
+    tool_calls_chunk.extend(delta.tool_calls)
+```
+
+- `delta.content`: 답변 텍스트 조각.
+- `delta.tool_calls`: 함수 호출 정보 조각.
+- `extend()`: 전달받은 목록의 항목들을 기존 목록에 추가.
+
+함수 인자 JSON도 여러 조각으로 나뉘어 도착할 수 있으므로, **모든 조각을 합친 뒤 `json.loads()`로 변환**해야 함.
+
+교재의 `tool_list_to_tool_obj(tools)`는 조각들을 함수 호출별로 정리하는 함수.
+
+```python
+tool_calls_dict[tool_call.index]["function"]["arguments"] += (
+    tool_call.function.arguments
+)
+```
+
+핵심:
+
+- `index`: 같은 함수 호출의 조각인지 구분.
+- `id`: 함수 호출 식별자.
+- `function.name`: 함수 이름.
+- `function.arguments`: 인자 문자열 조각.
+- `+=`: 인자 문자열을 이어 붙임.
+- `defaultdict`: 처음 등장한 인덱스에 기본 저장 구조를 만들어 주는 데 사용.
+
+변환 후에는 딕셔너리 형태로 접근함.
+
+```python
+tool_name = tool_call["function"]["name"]
+tool_call_id = tool_call["id"]
+arguments = json.loads(tool_call["function"]["arguments"])
+```
+
+일반 응답 객체에서 쓰던 `.function.name`과, 딕셔너리에서 쓰는 `["function"]["name"]`을 구분.
+
+이후 함수 실행 → 결과 기록 → 모델 재호출 → 최종 답변 스트리밍 순서로 처리함.
